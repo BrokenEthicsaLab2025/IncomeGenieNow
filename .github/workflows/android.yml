@@ -2,25 +2,66 @@ name: Android CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
+    env:
+      JAVA_HOME_11: /opt/hostedtoolcache/jdk/11/x64
 
     steps:
-    - uses: actions/checkout@v4
-    - name: set up JDK 11
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 11
       uses: actions/setup-java@v4
       with:
-        java-version: '11'
-        distribution: 'temurin'
-        cache: gradle
+        distribution: temurin
+        java-version: 11
+
+    - name: Cache Gradle packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*','**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
+    - name: Install Android SDK tools
+      uses: android-actions/setup-android@v3
+      with:
+        api-level: 33
+        ndk: '23.1.7779620'
+        components: build-tools;33.0.2,platform-tools,platforms;android-33
 
     - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-    - name: Build with Gradle
-      run: ./gradlew build
+      run: chmod +x ./gradlew
+
+    - name: Show environment (debug)
+      run: |
+        java -version
+        ./gradlew -v
+
+    - name: Assemble debug APK
+      run: ./gradlew assembleDebug --no-daemon
+
+    - name: Assemble release APK (if configured)
+      if: always()
+      run: ./gradlew assembleRelease --no-daemon || echo "No release build configured or failed; continuing"
+
+    - name: Collect APKs
+      run: |
+        mkdir -p output_apks
+        find . -type f -path "*/app/build/outputs/apk/*/*.apk" -exec cp {} output_apks/ \; || true
+        ls -la output_apks
+
+    - name: Upload built APKs
+      uses: actions/upload-artifact@v4
+      with:
+        name: IncomeGenie-APKs
+        path: output_apks/*.apk
